@@ -427,12 +427,12 @@ def show_districts(city, rows, me=None, stations=None):
     from_sensor = points["source"].str.startswith("📡").sum()
     if stations:
         st.caption("Датчики: World Air Quality Index Project (aqicn.org) и исходные службы мониторинга.")
-    if from_sensor:
-        st.info(
-            f"📡 У {from_sensor} из {len(points)} районов цифра взята с реального датчика "
-            "рядом (до 3 км). Остальные — расчёт модели. Чем больше датчиков, тем точнее "
-            "разница между районами — это и делают устройства Air Control Sensors."
-        )
+    if from_sensor == len(points):
+        st.success("📡 Все цифры — с живых уличных датчиков: каждый район берёт данные "
+                   "с ближайшего к нему датчика (расстояние указано в таблице).")
+    elif from_sensor:
+        st.info(f"📡 У {from_sensor} из {len(points)} районов цифра с живого датчика. "
+                "Для остальных рядом датчиков нет — показан расчёт модели.")
     elif points["aqi"].max() - points["aqi"].min() <= 3:
         st.info(
             "Сейчас у районов почти одинаковые цифры. Сервис считает воздух по модели "

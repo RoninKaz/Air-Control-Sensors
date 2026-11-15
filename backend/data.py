@@ -365,24 +365,35 @@ def get_stations(city, token, margin=0.15):
         return []
 
 
-def nearest_station(lat, lon, stations, max_km=3.0):
-    """Ближайший датчик не дальше max_km, или None."""
-    best, best_km = None, None
+STATION_MAX_KM = 15.0  # дальше этого датчик уже «не в этом районе»
+
+
+def nearest_station(lat, lon, stations, max_km=STATION_MAX_KM):
+    """Ближайший живой датчик не дальше max_km: копия словаря датчика
+    с полем "km" (расстояние), или None."""
+    best = None
     for s in stations:
         km = _distance_km(lat, lon, s["lat"], s["lon"])
-        if km <= max_km and (best_km is None or km < best_km):
-            best, best_km = s, km
+        if km <= max_km and (best is None or km < best["km"]):
+            best = dict(s, km=round(km, 1))
     return best
 
 
-def apply_stations(rows, stations, max_km=3.0):
-    """Районы, рядом с которыми есть датчик, берут цифру с него.
-    Добавляет каждой строке "source": «📡 датчик …» или «🌐 модель»."""
+def stations_mean(stations):
+    """Средний AQI по всем живым датчикам, или None."""
+    if not stations:
+        return None
+    return round(sum(s["aqi"] for s in stations) / len(stations))
+
+
+def apply_stations(rows, stations, max_km=STATION_MAX_KM):
+    """Каждый район берёт цифру с ближайшего живого датчика.
+    Добавляет "source": «📡 датчик: имя · N км» или «🌐 модель» (датчиков нет)."""
     out = []
     for r in rows:
         s = nearest_station(r["lat"], r["lon"], stations, max_km)
         if s is not None:
-            out.append(dict(r, aqi=s["aqi"], source=f"📡 датчик: {s['name']}"))
+            out.append(dict(r, aqi=s["aqi"], source=f"📡 {s['name']} · {s['km']} км"))
         else:
             out.append(dict(r, source="🌐 модель"))
     return out

@@ -17,7 +17,7 @@ from backend.advice_rules import get_rule_advice
 from backend.data import (CITIES, DISTRICTS, apply_stations, city_place,
                           district_place, get_air, get_cities_aqi,
                           get_districts_aqi, get_hourly, get_stations,
-                          nearest_place, nearest_station, search_places,
+                          nearest_place, nearest_station, search_places, stations_mean,
                           split_now)
 
 st.set_page_config(page_title="Air Control Sensors", page_icon="🌫️", layout="wide")
@@ -97,10 +97,16 @@ df, _ = load_hourly(place)
 # реальные уличные датчики aqicn.org (если есть ключ AQICN_TOKEN)
 station_city = district_city or next((c for c in CITIES if c in place["name"]), None)
 stations = load_stations(station_city, secret("AQICN_TOKEN")) if station_city else []
-near = nearest_station(place["lat"], place["lon"], stations)
-if near is not None:  # рядом (до 3 км) есть датчик — берём его цифру
-    air["aqi"] = near["aqi"]
-    air["aqi_note"] = f"📡 По данным датчика «{near['name']}» (aqicn.org)" + (f", {near['time']}" if near["time"] else "")
+whole_city = sel["mode"] == "list" and not sel["district"]
+if whole_city and stations:  # весь город — среднее по всем живым датчикам
+    air["aqi"] = stations_mean(stations)
+    air["aqi_note"] = f"📡 Среднее по {len(stations)} живым датчикам города (aqicn.org)"
+else:
+    near = nearest_station(place["lat"], place["lon"], stations)
+    if near is not None:  # район или «моё местоположение» — ближайший живой датчик
+        air["aqi"] = near["aqi"]
+        when = f", {near['time']}" if near["time"] else ""
+        air["aqi_note"] = f"📡 Живой датчик «{near['name']}» · {near['km']} км (aqicn.org){when}"
 _, past, future = split_now(df)
 
 # ---------- Советы: сначала ИИ, если не вышло — по правилам ----------
