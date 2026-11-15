@@ -1,114 +1,132 @@
 """
-Air Control Sensors — фронтенд (Streamlit).
-Запуск:  streamlit run app.py
+Air Control Sensors — главный файл. Собирает ОБЩИЙ КАПИТАН.
+Запуск:  python -m streamlit run app.py
+
+Здесь только соединяем части команд:
+  backend/data.py          — данные (бэкенд)
+  backend/advice_rules.py  — советы по правилам (бэкенд)
+  ai/advice_ai.py          — советы от ИИ (команда ИИ)
+  ui.py                    — экран (фронтенд)
 """
 
-from datetime import datetime
-
-import pandas as pd
 import streamlit as st
 
-from backend.data import DISTRICTS, get_hourly
+import ui
+from ai.advice_ai import get_ai_advice
+from backend.advice_rules import get_rule_advice
+from backend.data import (CITIES, DISTRICTS, apply_stations, city_place,
+                          district_place, get_air, get_cities_aqi,
+                          get_districts_aqi, get_hourly, get_stations,
+                          nearest_place, nearest_station, search_places,
+                          split_now)
 
-st.set_page_config(page_title="Air Control — Шымкент", page_icon="🌫️", layout="wide")
-
-
-# ---------- Шкала качества воздуха (US AQI) ----------
-LEVELS = [
-    # (верхняя граница, название, цвет, совет)
-    (50, "Хорошо", "#2ecc71", "Воздух чистый. Можно гулять и проветривать."),
-    (100, "Умеренно", "#f1c40f", "Чувствительным людям лучше не находиться долго на улице."),
-    (150, "Вредно для чувствительных", "#e67e22", "Детям, пожилым и астматикам — сократить время на улице."),
-    (200, "Вредно", "#e74c3c", "Всем лучше ограничить прогулки, закрыть окна."),
-    (300, "Очень вредно", "#8e44ad", "Оставайтесь дома, используйте очиститель воздуха."),
-    (10_000, "Опасно", "#7f1d1d", "Не выходите на улицу без необходимости, наденьте респиратор."),
-]
+st.set_page_config(page_title="Air Control Sensors", page_icon="🌫️", layout="wide")
 
 
-def level_of(aqi):
-    for top, name, color, advice in LEVELS:
-        if aqi <= top:
-            return name, color, advice
-    return LEVELS[-1][1:]
+@st.cache_data(ttl=600)  # данные обновляем не чаще раза в 10 минут
+def load_air(place):
+    return get_air(place)
 
 
-@st.cache_data(ttl=600)  # обновлять данные не чаще раза в 10 минут
-def load(district):
-    return get_hourly(district)
+@st.cache_data(ttl=600)
+def load_hourly(place):
+    return get_hourly(place)
 
 
-def split_now(df):
-    """Делит таблицу на «прошлое до сейчас» и «прогноз», возвращает текущую строку."""
-    now = datetime.now()
-    past = df[df["time"] <= now]
-    future = df[df["time"] > now]
-    current = past.iloc[-1] if not past.empty else df.iloc[0]
-    return current, past, future
+@st.cache_data(ttl=600)
+def load_cities_aqi():
+    return get_cities_aqi()
 
 
-# ---------- Боковая панель ----------
-st.sidebar.title("🌫️ Air Control")
-district = st.sidebar.selectbox("Район Шымкента", list(DISTRICTS.keys()))
-st.sidebar.caption("Данные обновляются каждые 10 минут.")
+@st.cache_data(ttl=600)
+def load_districts_aqi(city):
+    return get_districts_aqi(city)
 
-df, source = load(district)
-current, past, future = split_now(df)
-name, color, advice = level_of(current["aqi"])
 
-# ---------- Заголовок ----------
-st.title(f"Качество воздуха: {district} район")
-if source == "demo":
-    st.warning("Сейчас показаны демо-данные: источник данных недоступен.")
+@st.cache_data(ttl=600)
+def load_stations(city, token):
+    return get_stations(city, token)
 
-# ---------- Главная карточка ----------
-st.markdown(
-    f"""
-    <div style="background:{color};padding:24px;border-radius:16px;color:white;">
-        <div style="font-size:18px;opacity:.9;">Индекс качества воздуха (AQI)</div>
-        <div style="font-size:64px;font-weight:700;line-height:1.1;">{int(current['aqi'])}</div>
-        <div style="font-size:24px;font-weight:600;">{name}</div>
-        <div style="font-size:16px;margin-top:8px;">{advice}</div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-st.write("")
 
-# ---------- Показатели ----------
-c1, c2, c3 = st.columns(3)
-c1.metric("PM2.5, мкг/м³", current["pm2_5"])
-c2.metric("PM10, мкг/м³", current["pm10"])
-c3.metric("NO₂, мкг/м³", current["no2"])
+@st.cache_data(ttl=3600)
+def find_places(query):
+    return search_places(query)
 
-# ---------- Графики ----------
-left, right = st.columns(2)
-with left:
-    st.subheader("Последние 24 часа")
-    st.line_chart(past.tail(24).set_index("time")[["aqi"]], height=260)
-with right:
-    st.subheader("Прогноз на 24 часа")
-    if future.empty:
-        st.info("Прогноза пока нет.")
+
+@st.cache_data(ttl=1800)  # советы ИИ запоминаем на 30 минут
+def load_ai_advice(air, api_key):
+    return get_ai_advice(air, api_key)
+
+
+def secret(name):
+    try:
+        return st.secrets.get(name, "")
+    except Exception:  # файла .streamlit/secrets.toml нет
+        return ""
+
+
+# ---------- Где смотрим воздух ----------
+sel = ui.show_place_picker(list(CITIES), DISTRICTS)
+place = city_place(sel["city"])
+district_city = sel["city"] if sel["mode"] == "list" else None
+note = None
+
+if sel["mode"] == "list" and sel["district"]:
+    place = district_place(sel["city"], sel["district"])
+elif sel["mode"] == "search":
+    if sel["query"].strip():
+        found = ui.show_search_results(find_places(sel["query"].strip()))
+        if found is not None:
+            place = found
     else:
-        st.line_chart(future.head(24).set_index("time")[["aqi"]], height=260)
-        worst = future.head(24).loc[future.head(24)["aqi"].idxmax()]
-        st.caption(
-            f"Хуже всего будет около {worst['time']:%H:%M} — AQI {int(worst['aqi'])} "
-            f"({level_of(worst['aqi'])[0].lower()})."
-        )
+        note = "Введите название города выше. Пока показываю Астану."
+elif sel["mode"] == "geo":
+    if sel["coords"]:
+        place = nearest_place(*sel["coords"])
+        # если человек в городе с районами — покажем и районы
+        for city in DISTRICTS:
+            if city in place["name"]:
+                district_city = city
+    else:
+        note = "Пока местоположение не определено, показываю Астану."
 
-# ---------- Карта всех районов ----------
-st.subheader("Карта районов")
-points = []
-for d, (lat, lon) in DISTRICTS.items():
-    d_df, _ = load(d)
-    d_now, _, _ = split_now(d_df)
-    d_name, d_color, _ = level_of(d_now["aqi"])
-    points.append({"lat": lat, "lon": lon, "color": d_color,
-                   "Район": d, "AQI": int(d_now["aqi"]), "Уровень": d_name})
-map_df = pd.DataFrame(points)
-st.map(map_df, latitude="lat", longitude="lon", color="color", size=900, zoom=11)
-st.dataframe(map_df[["Район", "AQI", "Уровень"]].sort_values("AQI"),
-             hide_index=True, use_container_width=True)
+# ---------- Данные ----------
+air = dict(load_air(place))
+df, _ = load_hourly(place)
 
-st.caption("Источник: Open-Meteo Air Quality API · Air Control Sensors, 2026")
+# реальные уличные датчики aqicn.org (если есть ключ AQICN_TOKEN)
+station_city = district_city or next((c for c in CITIES if c in place["name"]), None)
+stations = load_stations(station_city, secret("AQICN_TOKEN")) if station_city else []
+near = nearest_station(place["lat"], place["lon"], stations)
+if near is not None:  # рядом (до 3 км) есть датчик — берём его цифру
+    air["aqi"] = near["aqi"]
+    air["aqi_note"] = f"📡 По данным датчика «{near['name']}» (aqicn.org)" + (f", {near['time']}" if near["time"] else "")
+_, past, future = split_now(df)
+
+# ---------- Советы: сначала ИИ, если не вышло — по правилам ----------
+ai_key = secret("AI_API_KEY")
+advice = None
+if ai_key:
+    with st.spinner("ИИ готовит советы…"):
+        advice = load_ai_advice(air, ai_key)
+from_ai = advice is not None
+if not from_ai:
+    advice = get_rule_advice(air)
+
+# ---------- Экран ----------
+ui.show_header(place["name"], air["source"])
+if note:
+    st.info(note)
+ui.show_aqi(air)
+ui.show_weather(air)
+ui.show_advice(advice, from_ai)
+ui.show_charts(df, past, future)
+# синяя точка «вы здесь» — только если человек определил своё местоположение
+me = None
+if sel["mode"] == "geo" and sel["coords"]:
+    me = {"lat": sel["coords"][0], "lon": sel["coords"][1], "aqi": air["aqi"]}
+
+if district_city in DISTRICTS:
+    rows = apply_stations(load_districts_aqi(district_city), stations)
+    ui.show_districts(district_city, rows, me, stations)
+ui.show_map(load_cities_aqi(), me)
