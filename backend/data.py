@@ -322,6 +322,24 @@ def get_districts_aqi(city):
 #  Реальные датчики (aqicn.org, бесплатный ключ AQICN_TOKEN)
 # ---------------------------------------------------------------------
 
+KZ_TZ = timezone(timedelta(hours=5))  # весь Казахстан живёт по UTC+5
+STATION_MAX_AGE_H = 3  # датчик, молчащий дольше, — уже не «живой»
+
+
+def _station_time(raw):
+    """Время замера датчика → {"time": "ЧЧ:ММ" по времени Казахстана, "age_h": часов назад}.
+    aqicn присылает время с часовым поясом, например «2026-11-15T13:00:00+00:00»."""
+    try:
+        t = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=KZ_TZ)
+        local = t.astimezone(KZ_TZ)
+        age = (datetime.now(timezone.utc) - t).total_seconds() / 3600
+        return {"time": local.strftime("%H:%M"), "age_h": round(age, 1)}
+    except Exception:  # noqa: BLE001
+        return {"time": "", "age_h": None}
+
+
 def get_stations(city, token, margin=0.15):
     """Реальные уличные датчики вокруг города.
     Возвращает список {"name", "lat", "lon", "aqi", "time"}.
@@ -358,9 +376,10 @@ def get_stations(city, token, margin=0.15):
                 "lat": float(s["lat"]),
                 "lon": float(s["lon"]),
                 "aqi": aqi,
-                "time": str(info.get("time") or "")[11:16],  # «17:00»
+                **_station_time(info.get("time")),
             })
-        return stations
+        # «живые» — только датчики, обновлённые за последние STATION_MAX_AGE_H часов
+        return [x for x in stations if x["age_h"] is None or x["age_h"] <= STATION_MAX_AGE_H]
     except Exception:  # noqa: BLE001
         return []
 
