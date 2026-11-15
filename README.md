@@ -67,7 +67,7 @@ python -m streamlit run app.py
 
 ## Ключи
 
-Ключ ИИ хранится в `.streamlit/secrets.toml` (этот файл не загружаем в GitHub):
+Ключи хранятся в `.streamlit/secrets.toml` (этот файл не загружаем в GitHub). Пример — `.streamlit/secrets.toml.example`: скопируйте его, назовите копию `secrets.toml` и вставьте свои ключи.
 ```toml
 AI_API_KEY = "ключ_модели_ИИ"
 AQICN_TOKEN = "ключ_aqicn"   # реальные датчики, бесплатно: aqicn.org/data-platform/token
