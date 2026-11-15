@@ -135,8 +135,13 @@ LOGO_SVG = f"""
 CSS = f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-html, body, [class*="st-"], .stMarkdown, button, input {{
+html, body, .stApp, .stMarkdown, .stApp p, .stApp label, .stApp input, .stApp li,
+.stApp h1, .stApp h2, .stApp h3, .stApp summary p, .stApp button p {{
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}}
+/* значки Streamlit (стрелки, галочки) оставляем со своим шрифтом */
+[data-testid="stIconMaterial"], .material-symbols-rounded, [class*="material-symbols"] {{
+  font-family: 'Material Symbols Rounded' !important;
 }}
 .block-container {{ max-width: 1080px; padding-top: 2.2rem; padding-bottom: 4rem; }}
 [data-testid="stToolbar"], [data-testid="stDecoration"] {{ display: none; }}
