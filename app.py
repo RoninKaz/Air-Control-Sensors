@@ -9,6 +9,8 @@ Air Control Sensors — главный файл. Собирает ОБЩИЙ К�
   ui.py                    — экран (фронтенд)
 """
 
+from pathlib import Path
+
 import streamlit as st
 
 import ui
@@ -20,7 +22,7 @@ from backend.data import (CITIES, DISTRICTS, apply_stations, city_place,
                           nearest_place, nearest_station, search_places, stations_mean,
                           split_now)
 
-st.set_page_config(page_title="Air Control Sensors", page_icon="🌫️", layout="wide")
+st.set_page_config(page_title="Air Control Sensors", page_icon=str(Path(__file__).parent / "assets" / "logo.png"), layout="wide")
 
 
 @st.cache_data(ttl=600)  # данные обновляем не чаще раза в 10 минут
