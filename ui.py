@@ -57,7 +57,10 @@ def level_of(aqi):
 
 
 def _show(value, unit=""):
-    return "—" if value is None else f"{value}{unit}"
+    if value is None:
+        return "—"
+    return f'{value}<span style="font-size:13px;font-weight:500;opacity:.65;"> {unit.strip()}</span>'
+
 
 
 # ---------------------------------------------------------------------
@@ -111,10 +114,79 @@ def _ask_location():
     return float(lat), float(lon)
 
 
+# ---------------------------------------------------------------------
+#  Оформление: шрифт, ширина, логотип
+# ---------------------------------------------------------------------
+
+ACCENT = "#1FAF8B"  # фирменный бирюзово-зелёный
+
+LOGO_SVG = f"""
+<svg width="44" height="44" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+  <circle cx="24" cy="24" r="20" stroke="{ACCENT}" stroke-width="3.5"/>
+  <path d="M12 19c4-3 8 3 12 0s8-3 12 0" stroke="{ACCENT}" stroke-width="3" stroke-linecap="round"/>
+  <path d="M12 25.5c4-3 8 3 12 0s8-3 12 0" stroke="{ACCENT}" stroke-width="3" stroke-linecap="round" opacity=".7"/>
+  <path d="M15 32c3-2.2 6 2.2 9 0s6-2.2 9 0" stroke="{ACCENT}" stroke-width="3" stroke-linecap="round" opacity=".45"/>
+  <circle cx="38.5" cy="9.5" r="5" fill="url(#acsg)" stroke="var(--acs-bg, #fff)" stroke-width="2"/>
+  <defs><linearGradient id="acsg" x1="34" y1="5" x2="43" y2="14">
+    <stop stop-color="#2ecc71"/><stop offset=".5" stop-color="#f1c40f"/><stop offset="1" stop-color="#e74c3c"/>
+  </linearGradient></defs>
+</svg>"""
+
+CSS = f"""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+html, body, [class*="st-"], .stMarkdown, button, input {{
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}}
+.block-container {{ max-width: 1080px; padding-top: 2.2rem; padding-bottom: 4rem; }}
+[data-testid="stToolbar"], [data-testid="stDecoration"] {{ display: none; }}
+header[data-testid="stHeader"] {{ background: transparent; height: 0; }}
+h2, h3 {{ font-weight: 700 !important; letter-spacing: -0.015em; }}
+h3 {{ font-size: 1.25rem !important; padding-top: 1.6rem !important; }}
+
+/* невидимый блок определения местоположения не занимает места */
+.stElementContainer:has(iframe[title*="streamlit_js_eval"]),
+.element-container:has(iframe[title*="streamlit_js_eval"]) {{
+  height: 0 !important; min-height: 0 !important; margin: 0 !important; overflow: hidden;
+}}
+
+/* переключатель режимов — «таблетки» */
+div[role="radiogroup"] {{ gap: 6px; flex-wrap: wrap; }}
+div[role="radiogroup"] > label {{
+  margin: 0 !important; padding: 7px 14px; border-radius: 999px;
+  border: 1px solid rgba(128,128,128,.28); cursor: pointer;
+}}
+div[role="radiogroup"] > label > div:first-child {{ display: none; }}
+div[role="radiogroup"] > label:has(input:checked) {{
+  background: {ACCENT}; border-color: {ACCENT};
+}}
+div[role="radiogroup"] > label:has(input:checked) p {{ color: #fff !important; font-weight: 600; }}
+
+/* карточки */
+[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 14px !important; }}
+.acs-cell {{ border: 1px solid rgba(128,128,128,.22); border-radius: 12px; padding: 10px 14px; }}
+.acs-cell .k {{ font-size: 12.5px; opacity: .7; }}
+.acs-cell .v {{ font-size: 21px; font-weight: 650; line-height: 1.35; font-variant-numeric: tabular-nums; }}
+</style>
+"""
+
+
+def _style():
+    st.markdown(CSS, unsafe_allow_html=True)
+    st.markdown(
+        f"""<div style="display:flex;align-items:center;gap:14px;margin-bottom:6px;">
+        {LOGO_SVG}
+        <div><div style="font-size:28px;font-weight:800;letter-spacing:-.02em;line-height:1.1;">
+        Air Control <span style="color:{ACCENT};">Sensors</span></div>
+        <div style="font-size:14px;opacity:.65;margin-top:3px;">Знай, чем дышишь · данные обновляются
+        каждые 10 минут</div></div></div>""",
+        unsafe_allow_html=True,
+    )
+
+
 def show_place_picker(cities, districts):
     """Выбор места прямо на странице (удобно и на телефоне)."""
-    st.markdown("## 🌫️ Air Control Sensors")
-    st.caption("Знай, чем дышишь · данные обновляются каждые 10 минут")
+    _style()
     mode = st.radio("Где смотрим воздух?", [MODE_LIST, MODE_SEARCH, MODE_GEO],
                     horizontal=True, label_visibility="collapsed")
     sel = {"mode": "list", "city": cities[0], "district": None, "query": "", "coords": None}
@@ -150,27 +222,67 @@ def show_search_results(results):
 # ---------------------------------------------------------------------
 
 def show_header(city, source):
-    st.divider()
-    st.subheader(f"Качество воздуха: {city}")
+    st.markdown(
+        f"""<div style="margin-top:22px;border-top:1px solid rgba(128,128,128,.2);padding-top:22px;">
+        <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.6;">
+        Качество воздуха</div>
+        <div style="font-size:26px;font-weight:750;letter-spacing:-.015em;margin-top:2px;">{city}</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
     if source == "demo":
         st.warning("Сейчас показаны демо-данные: источник данных недоступен.")
 
 
+SCALE = [0, 50, 100, 150, 200, 300, 500]  # границы шкалы — у каждой полосы равная ширина
+
+
+def _scale_pos(aqi):
+    """Положение AQI на шкале в процентах (полосы одинаковой ширины)."""
+    aqi = max(0, min(aqi, SCALE[-1]))
+    for k in range(len(SCALE) - 1):
+        lo, hi = SCALE[k], SCALE[k + 1]
+        if aqi <= hi:
+            return (k + (aqi - lo) / (hi - lo)) * 100 / (len(SCALE) - 1)
+    return 100
+
+
 def show_aqi(air):
     name, color, text = level_of(air["aqi"])
+    pos = _scale_pos(air["aqi"])
+    bands = "".join(f'<div style="flex:1;background:{c};"></div>' for _, _, c, _ in LEVELS)
+    ticks = "".join(f'<span>{v}</span>' for v in SCALE[:-1]) + "<span>500</span>"
+    note = (f'<div style="font-size:13px;opacity:.7;margin-top:10px;">{air["aqi_note"]}</div>'
+            if air.get("aqi_note") else "")
     st.markdown(
         f"""
-        <div style="background:{color};padding:24px;border-radius:16px;color:{text};">
-            <div style="font-size:18px;opacity:.85;">Индекс качества воздуха (AQI) · {air['time']}</div>
-            <div style="font-size:64px;font-weight:700;line-height:1.1;">{air['aqi']}</div>
-            <div style="font-size:24px;font-weight:600;">{name}</div>
-            <div style="font-size:16px;margin-top:8px;">Сейчас {SHORT[name]}.</div>
-            {f'<div style="font-size:14px;margin-top:6px;opacity:.85;">{air["aqi_note"]}</div>' if air.get("aqi_note") else ""}
+        <div style="border:1px solid {color}66;background:linear-gradient(135deg,{color}2e,{color}0d);
+                    border-radius:18px;padding:22px 24px;margin-top:12px;">
+          <div style="display:flex;flex-wrap:wrap;gap:8px 28px;align-items:center;">
+            <div style="min-width:150px;">
+              <div style="font-size:13px;opacity:.7;">Индекс AQI · {air['time']}</div>
+              <div style="font-size:72px;font-weight:800;line-height:1;letter-spacing:-.03em;
+                          font-variant-numeric:tabular-nums;margin-top:4px;">{air['aqi']}</div>
+            </div>
+            <div style="flex:1;min-width:220px;">
+              <span style="display:inline-block;background:{color};color:{text};font-weight:700;
+                           font-size:15px;padding:5px 14px;border-radius:999px;">{name}</span>
+              <div style="font-size:17px;margin-top:10px;">Сейчас {SHORT[name]}.</div>
+              {note}
+            </div>
+          </div>
+          <div style="margin-top:20px;position:relative;">
+            <div style="display:flex;height:8px;border-radius:999px;overflow:hidden;opacity:.9;">{bands}</div>
+            <div style="position:absolute;left:{pos:.1f}%;top:-5px;width:18px;height:18px;margin-left:-9px;
+                        border-radius:50%;background:{color};border:3px solid #fff;
+                        box-shadow:0 1px 4px rgba(0,0,0,.35);"></div>
+            <div style="display:flex;justify-content:space-between;font-size:11px;opacity:.55;
+                        margin-top:6px;font-variant-numeric:tabular-nums;">{ticks}</div>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    st.write("")
 
 
 def show_weather(air):
@@ -180,20 +292,18 @@ def show_weather(air):
         ("🌡️ Температура", _show(air.get("t"), " °C")),
         ("💧 Влажность", _show(air.get("h"), " %")),
         ("💨 Ветер", _show(air.get("w"), " м/с")),
-        ("🧭 Давление", _show(air.get("p"), " гПа")),
+        ("🧭 Давление", _show(None if air.get("p") is None else round(air["p"]), " гПа")),
         ("PM2.5", _show(air.get("pm25"), " мкг/м³")),
         ("PM10", _show(air.get("pm10"), " мкг/м³")),
         ("NO₂", _show(air.get("no2"), " мкг/м³")),
     ]
     cells = "".join(
-        f'<div style="background:rgba(128,128,128,.12);border-radius:12px;padding:10px 12px;">'
-        f'<div style="font-size:13px;opacity:.75;">{label}</div>'
-        f'<div style="font-size:22px;font-weight:600;line-height:1.3;">{value}</div></div>'
+        f'<div class="acs-cell"><div class="k">{label}</div><div class="v">{value}</div></div>'
         for label, value in items
     )
     st.markdown(
         f'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));'
-        f'gap:8px;">{cells}</div>',
+        f'gap:10px;">{cells}</div>',
         unsafe_allow_html=True,
     )
     st.write("")
