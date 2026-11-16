@@ -44,7 +44,7 @@ python -m streamlit run app.py
 - `nearest_place(lat, lon)` → place по местоположению пользователя (ближайший район или город)
 - `get_districts_aqi(city)` → AQI во всех районах города одним запросом
 - `get_stations(city, token)` → реальные уличные датчики aqicn.org вокруг города (без ключа — пустой список)
-- `apply_stations(rows, stations)` → районам, у которых датчик ближе 3 км, ставит цифру датчика
+- `apply_stations(rows, stations)` → каждому району ставит цифру ближайшего живого датчика (не дальше 15 км, `STATION_MAX_KM`)
 - `get_air(place)` → словарь «что сейчас»:
   `city, aqi, time, pm25, pm10, no2, t (°C), h (%), p (гПа), w (м/с), source`
 - `get_hourly(place)` → (таблица `time, utc, pm2_5, pm10, no2, aqi` по часам: 7 дней назад + прогноз, источник `"api"`/`"demo"`)

@@ -36,8 +36,8 @@
 
   get_stations(city, token) -> реальные датчики aqicn вокруг города:
                       список {"name", "lat", "lon", "aqi", "time"} (без ключа — [])
-  nearest_station(lat, lon, stations, max_km=3) -> ближайший датчик или None
-  apply_stations(rows, stations) -> районы с цифрой с датчика, если он ближе 3 км,
+  nearest_station(lat, lon, stations, max_km=15) -> ближайший живой датчик или None
+  apply_stations(rows, stations) -> районы с цифрой ближайшего датчика (до 15 км),
                       + поле "source": «📡 датчик …» или «🌐 модель»
 """
 
