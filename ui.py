@@ -431,7 +431,7 @@ def _stations_table(stations):
     return pd.DataFrame(rows)
 
 
-def _draw_map(points, lat, lon, zoom, radius_px, me=None, stations=None):
+def _draw_map(points, lat, lon, zoom, radius_px, me=None, stations=None, key=None):
     """Карта с кружками одного размера на экране и подсказкой при наведении.
     me — {"lat", "lon", "aqi"}: где находится пользователь (синяя точка).
     stations — реальные датчики: маленькие кружки с толстой тёмной обводкой."""
@@ -504,7 +504,10 @@ def _draw_map(points, lat, lon, zoom, radius_px, me=None, stations=None):
         initial_view_state=pdk.ViewState(latitude=lat, longitude=lon, zoom=zoom),
         tooltip={"text": "{label}\nAQI {aqi} — {level}"},
     )
-    st.pydeck_chart(deck)
+    try:  # свой key у каждой карты: при смене города/области карта заново центрируется
+        st.pydeck_chart(deck, key=key)
+    except TypeError:  # старый Streamlit без key
+        st.pydeck_chart(deck)
 
 
 def show_map(rows, me=None):
@@ -523,7 +526,7 @@ def show_map(rows, me=None):
         st.markdown(f"### {worst['label']}")
         st.caption(f"AQI {worst['aqi']} — {worst['level'].lower()}")
 
-    _draw_map(points, lat=48.0, lon=67.5, zoom=3.6, radius_px=11, me=me)
+    _draw_map(points, lat=48.0, lon=67.5, zoom=3.6, radius_px=11, me=me, key="map-kz")
     hint = "Наведите на кружок, чтобы увидеть город и AQI."
     if me is not None:
         hint += " 🔵 Синяя точка — вы."
@@ -554,7 +557,7 @@ def show_districts(city, rows, me=None, stations=None):
     zoom = _zoom_for(points)
     _draw_map(points, lat=(points["lat"].max() + points["lat"].min()) / 2,
               lon=(points["lon"].max() + points["lon"].min()) / 2,
-              zoom=zoom, radius_px=16 if zoom > 8 else 11, me=me, stations=stations)
+              zoom=zoom, radius_px=16 if zoom > 8 else 11, me=me, stations=stations, key=f"map-{city}")
 
     legend = ["Наведите на кружок, чтобы увидеть район и AQI."]
     if stations:

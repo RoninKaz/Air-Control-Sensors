@@ -457,7 +457,8 @@ def apply_stations(rows, stations, max_km=STATION_MAX_KM):
     for r in rows:
         s = nearest_station(r["lat"], r["lon"], stations, max_km)
         if s is not None:
-            out.append(dict(r, aqi=s["aqi"], source=f"📡 {s['name']} · {s['km']} км"))
+            name = s["name"] if len(s["name"]) <= 28 else s["name"][:27] + "…"
+            out.append(dict(r, aqi=s["aqi"], source=f"📡 {name} · {s['km']} км"))
         else:
             out.append(dict(r, source="🌐 модель"))
     return out
