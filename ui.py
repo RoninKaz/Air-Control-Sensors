@@ -157,15 +157,15 @@ h3 {{ font-size: 1.25rem !important; padding-top: 1.6rem !important; }}
 
 /* переключатель режимов — «таблетки» */
 div[role="radiogroup"] {{ gap: 6px; flex-wrap: wrap; }}
-div[role="radiogroup"] > label {{
+div[role="radiogroup"] label[data-baseweb="radio"] {{
   margin: 0 !important; padding: 7px 14px; border-radius: 999px;
   border: 1px solid rgba(128,128,128,.28); cursor: pointer;
 }}
-div[role="radiogroup"] > label > div:first-child {{ display: none; }}
-div[role="radiogroup"] > label:has(input:checked) {{
+div[role="radiogroup"] label[data-baseweb="radio"] > div:first-child {{ display: none; }}
+div[role="radiogroup"] label[data-baseweb="radio"]:has(input:checked) {{
   background: {ACCENT}; border-color: {ACCENT};
 }}
-div[role="radiogroup"] > label:has(input:checked) p {{ color: #fff !important; font-weight: 600; }}
+div[role="radiogroup"] label[data-baseweb="radio"]:has(input:checked) p {{ color: #fff !important; font-weight: 600; }}
 
 /* карточки */
 [data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 14px !important; }}
@@ -174,6 +174,12 @@ div[role="radiogroup"] > label:has(input:checked) p {{ color: #fff !important; f
 .acs-cell .v {{ font-size: 21px; font-weight: 650; line-height: 1.35; font-variant-numeric: tabular-nums; }}
 </style>
 """
+
+
+def _html(text):
+    """HTML без отступов и пустых строк: иначе Markdown в Streamlit
+    может принять часть блока за код и показать «</div>» текстом."""
+    return "".join(line.strip() for line in text.splitlines() if line.strip())
 
 
 def _style():
@@ -260,7 +266,7 @@ def show_aqi(air):
     note = (f'<div style="font-size:13px;opacity:.7;margin-top:10px;">{air["aqi_note"]}</div>'
             if air.get("aqi_note") else "")
     st.markdown(
-        f"""
+        _html(f"""
         <div style="border:1px solid {color}66;background:linear-gradient(135deg,{color}2e,{color}0d);
                     border-radius:18px;padding:22px 24px;margin-top:12px;">
           <div style="display:flex;flex-wrap:wrap;gap:8px 28px;align-items:center;">
@@ -285,7 +291,7 @@ def show_aqi(air):
                         margin-top:6px;font-variant-numeric:tabular-nums;">{ticks}</div>
           </div>
         </div>
-        """,
+        """),
         unsafe_allow_html=True,
     )
 
