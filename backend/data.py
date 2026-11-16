@@ -32,6 +32,8 @@
 
   get_cities_aqi() -> список {"city", "lat", "lon", "aqi"} для всех CITIES
                       (одним запросом — для карты и рейтинга)
+  region_place(region, district=None) -> place района области (без района — центр области)
+  get_region_aqi(region) -> список {city (= район), lat, lon, aqi} для всех районов области
   get_districts_aqi(city) -> то же для районов города
 
   get_stations(city, token) -> реальные датчики aqicn вокруг города:
@@ -97,6 +99,42 @@ def city_place(name):
     return {"name": name, "lat": lat, "lon": lon}
 
 
+# Районы областей: {область: {район: (широта, долгота)}}.
+# Файл backend/regions.py создаётся скриптом tools/build_regions.py.
+try:
+    from .regions import REGIONS
+except ImportError:  # файла ещё нет — режим «Район области» просто не появится
+    REGIONS = {}
+
+# Центр каждой области (город из CITIES) — для режима «вся область»
+REGION_CENTERS = {
+    "Абайская область": "Семей", "Акмолинская область": "Кокшетау",
+    "Актюбинская область": "Актобе", "Алматинская область": "Конаев",
+    "Атырауская область": "Атырау", "Восточно-Казахстанская область": "Усть-Каменогорск",
+    "Жамбылская область": "Тараз", "Жетысуская область": "Талдыкорган",
+    "Западно-Казахстанская область": "Уральск", "Карагандинская область": "Караганда",
+    "Костанайская область": "Костанай", "Кызылординская область": "Кызылорда",
+    "Мангистауская область": "Актау", "Павлодарская область": "Павлодар",
+    "Северо-Казахстанская область": "Петропавловск", "Туркестанская область": "Туркестан",
+    "Улытауская область": "Жезказган",
+}
+
+
+def region_place(region, district=None):
+    """Район области, или (без района) — центр области."""
+    if district:
+        lat, lon = REGIONS[region][district]
+        return {"name": f"{district} район, {region}", "lat": lat, "lon": lon}
+    city = REGION_CENTERS.get(region, "Астана")
+    lat, lon = CITIES[city]
+    return {"name": f"{region} · {city}", "lat": lat, "lon": lon}
+
+
+def get_region_aqi(region):
+    """AQI сейчас во всех районах области. Один запрос."""
+    return _points_aqi(REGIONS.get(region, {}), seed=region)
+
+
 def district_place(city, district):
     lat, lon = DISTRICTS[city][district]
     return {"name": f"{city}, {district} район", "lat": lat, "lon": lon}
@@ -125,6 +163,12 @@ def nearest_place(lat, lon):
             km = _distance_km(lat, lon, clat, clon)
             if km <= 40 and (best_km is None or km < best_km):
                 best_name, best_km = city, km
+    if best_name is None:  # не в городе — ищем ближайший центр района области
+        for region, districts in REGIONS.items():
+            for d, (dlat, dlon) in districts.items():
+                km = _distance_km(lat, lon, dlat, dlon)
+                if km <= 35 and (best_km is None or km < best_km):
+                    best_name, best_km = f"{d} район, {region}", km
     name = f"📍 {best_name}" if best_name else "📍 Моё местоположение"
     return {"name": name, "lat": round(lat, 4), "lon": round(lon, 4)}
 
@@ -346,7 +390,8 @@ def get_stations(city, token, margin=0.15):
     Нет ключа, нет интернета или датчиков — пустой список."""
     if not token:
         return []
-    pts = list(DISTRICTS.get(city, {}).values()) or [CITIES.get(city)]
+    pts = (list(DISTRICTS.get(city, {}).values()) or list(REGIONS.get(city, {}).values())
+           or [CITIES.get(city)])
     pts = [p for p in pts if p]
     if not pts:
         return []

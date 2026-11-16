@@ -45,6 +45,8 @@ WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 MODE_LIST = "🏙️ Город из списка"
 MODE_SEARCH = "🔎 Поиск города"
 MODE_GEO = "📍 Моё местоположение"
+MODE_REGION = "🏞️ Район области"
+WHOLE_REGION = "Вся область"
 WHOLE_CITY = "Весь город"
 
 
@@ -195,12 +197,15 @@ def _style():
     )
 
 
-def show_place_picker(cities, districts):
-    """Выбор места прямо на странице (удобно и на телефоне)."""
+def show_place_picker(cities, districts, regions=None):
+    """Выбор места прямо на странице (удобно и на телефоне).
+    regions: {область: {район: (lat, lon)}} — режим «Район области»."""
     _style()
-    mode = st.radio("Где смотрим воздух?", [MODE_LIST, MODE_SEARCH, MODE_GEO],
+    modes = [MODE_LIST] + ([MODE_REGION] if regions else []) + [MODE_SEARCH, MODE_GEO]
+    mode = st.radio("Где смотрим воздух?", modes,
                     horizontal=True, label_visibility="collapsed")
-    sel = {"mode": "list", "city": cities[0], "district": None, "query": "", "coords": None}
+    sel = {"mode": "list", "city": cities[0], "district": None, "query": "", "coords": None,
+           "region": None}
 
     if mode == MODE_LIST:
         c1, c2 = st.columns(2)
@@ -209,6 +214,13 @@ def show_place_picker(cities, districts):
             d = c2.selectbox("Район", [WHOLE_CITY] + list(districts[sel["city"]]))
             if d != WHOLE_CITY:
                 sel["district"] = d
+    elif mode == MODE_REGION:
+        sel["mode"] = "region"
+        c1, c2 = st.columns(2)
+        sel["region"] = c1.selectbox("Область", sorted(regions))
+        d = c2.selectbox("Район", [WHOLE_REGION] + sorted(regions[sel["region"]]))
+        if d != WHOLE_REGION:
+            sel["district"] = d
     elif mode == MODE_SEARCH:
         sel["mode"] = "search"
         sel["query"] = st.text_input("Название города", placeholder="Например: Ташкент")
@@ -521,6 +533,14 @@ def show_map(rows, me=None):
         st.dataframe(table[["Город", "AQI", "Уровень"]], hide_index=True)
 
 
+def _zoom_for(points):
+    """Масштаб карты, чтобы все точки поместились: город ≈ 10.5, область ≈ 5."""
+    import math
+    span = max(points["lat"].max() - points["lat"].min(),
+               (points["lon"].max() - points["lon"].min()) * 0.7, 0.05)
+    return max(4.2, min(10.8, math.log2(360 / (span * 1.6)) - 0.6))
+
+
 def show_districts(city, rows, me=None, stations=None):
     """rows: список {city (= район), lat, lon, aqi, source?} — районы города.
     me: {"lat", "lon", "aqi"} — где пользователь, или None.
@@ -531,8 +551,10 @@ def show_districts(city, rows, me=None, stations=None):
     points = _points_table(rows)
     sources = {r["city"]: r.get("source", "🌐 модель") for r in rows}
     points["source"] = points["label"].map(sources)
-    _draw_map(points, lat=points["lat"].mean(), lon=points["lon"].mean(),
-              zoom=10.6, radius_px=16, me=me, stations=stations)
+    zoom = _zoom_for(points)
+    _draw_map(points, lat=(points["lat"].max() + points["lat"].min()) / 2,
+              lon=(points["lon"].max() + points["lon"].min()) / 2,
+              zoom=zoom, radius_px=16 if zoom > 8 else 11, me=me, stations=stations)
 
     legend = ["Наведите на кружок, чтобы увидеть район и AQI."]
     if stations:

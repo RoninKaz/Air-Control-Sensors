@@ -16,7 +16,8 @@ import streamlit as st
 import ui
 from ai.advice_ai import get_ai_advice
 from backend.advice_rules import get_rule_advice
-from backend.data import (CITIES, DISTRICTS, apply_stations, city_place,
+from backend.data import (CITIES, DISTRICTS, REGIONS, apply_stations, city_place,
+                          get_region_aqi, region_place,
                           district_place, get_air, get_cities_aqi,
                           get_districts_aqi, get_hourly, get_stations,
                           nearest_place, nearest_station, search_places, stations_mean,
@@ -46,6 +47,11 @@ def load_districts_aqi(city):
 
 
 @st.cache_data(ttl=600)
+def load_region_aqi(region):
+    return get_region_aqi(region)
+
+
+@st.cache_data(ttl=600)
 def load_stations(city, token):
     return get_stations(city, token)
 
@@ -68,13 +74,18 @@ def secret(name):
 
 
 # ---------- Где смотрим воздух ----------
-sel = ui.show_place_picker(list(CITIES), DISTRICTS)
+sel = ui.show_place_picker(list(CITIES), DISTRICTS, REGIONS)
 place = city_place(sel["city"])
 district_city = sel["city"] if sel["mode"] == "list" else None
 note = None
 
+region = None  # область, чьи районы показать на карте
+
 if sel["mode"] == "list" and sel["district"]:
     place = district_place(sel["city"], sel["district"])
+elif sel["mode"] == "region":
+    region = sel["region"]
+    place = region_place(region, sel["district"])
 elif sel["mode"] == "search":
     if sel["query"].strip():
         found = ui.show_search_results(find_places(sel["query"].strip()))
@@ -89,6 +100,9 @@ elif sel["mode"] == "geo":
         for city in DISTRICTS:
             if city in place["name"]:
                 district_city = city
+        for r in REGIONS:  # человек в районе области — покажем районы области
+            if place["name"].endswith(r):
+                region = r
     else:
         note = "Пока местоположение не определено, показываю Астану."
 
@@ -97,7 +111,8 @@ air = dict(load_air(place))
 df, _ = load_hourly(place)
 
 # реальные уличные датчики aqicn.org (если есть ключ AQICN_TOKEN)
-station_city = district_city or next((c for c in CITIES if c in place["name"]), None)
+station_city = (district_city or region
+                or next((c for c in CITIES if c in place["name"]), None))
 stations = load_stations(station_city, secret("AQICN_TOKEN")) if station_city else []
 whole_city = sel["mode"] == "list" and not sel["district"]
 if whole_city and stations:  # весь город — среднее по всем живым датчикам
@@ -137,4 +152,7 @@ if sel["mode"] == "geo" and sel["coords"]:
 if district_city in DISTRICTS:
     rows = apply_stations(load_districts_aqi(district_city), stations)
     ui.show_districts(district_city, rows, me, stations)
+elif region in REGIONS:
+    rows = apply_stations(load_region_aqi(region), stations)
+    ui.show_districts(region, rows, me, stations)
 ui.show_map(load_cities_aqi(), me)
