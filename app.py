@@ -16,7 +16,8 @@ import streamlit as st
 import ui
 from ai.advice_ai import get_ai_advice
 from backend.advice_rules import get_rule_advice
-from backend.data import (CITIES, DISTRICTS, REGIONS, apply_stations, city_place,
+from backend.data import (CITIES, DISTRICTS, REGION_STATION_MAX_KM, REGIONS,
+                          apply_stations, city_place,
                           get_region_aqi, region_place,
                           district_place, get_air, get_cities_aqi,
                           get_districts_aqi, get_hourly, get_stations,
@@ -119,7 +120,9 @@ if whole_city and stations:  # весь город — среднее по вс�
     air["aqi"] = stations_mean(stations)
     air["aqi_note"] = f"📡 Среднее по {len(stations)} живым датчикам города (aqicn.org)"
 else:
-    near = nearest_station(place["lat"], place["lon"], stations)
+    radius = REGION_STATION_MAX_KM if region else None  # в сёлах датчики редкие
+    near = (nearest_station(place["lat"], place["lon"], stations, radius) if radius
+            else nearest_station(place["lat"], place["lon"], stations))
     if near is not None:  # район или «моё местоположение» — ближайший живой датчик
         air["aqi"] = near["aqi"]
         when = f", {near['time']}" if near["time"] else ""
@@ -153,6 +156,6 @@ if district_city in DISTRICTS:
     rows = apply_stations(load_districts_aqi(district_city), stations)
     ui.show_districts(district_city, rows, me, stations)
 elif region in REGIONS:
-    rows = apply_stations(load_region_aqi(region), stations)
+    rows = apply_stations(load_region_aqi(region), stations, REGION_STATION_MAX_KM)
     ui.show_districts(region, rows, me, stations)
 ui.show_map(load_cities_aqi(), me)

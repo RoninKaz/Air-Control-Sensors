@@ -390,6 +390,8 @@ def get_stations(city, token, margin=0.15):
     Нет ключа, нет интернета или датчиков — пустой список."""
     if not token:
         return []
+    if city in REGIONS:  # область: сёла далеко от датчиков — ищем шире (~60 км)
+        margin = max(margin, 0.6)
     pts = (list(DISTRICTS.get(city, {}).values()) or list(REGIONS.get(city, {}).values())
            or [CITIES.get(city)])
     pts = [p for p in pts if p]
@@ -429,7 +431,8 @@ def get_stations(city, token, margin=0.15):
         return []
 
 
-STATION_MAX_KM = 15.0  # дальше этого датчик уже «не в этом районе»
+STATION_MAX_KM = 15.0  # районы города: дальше этого датчик уже «не в этом районе»
+REGION_STATION_MAX_KM = 60.0  # районы области (сёла): датчиков мало, берём ближайший до 60 км
 
 
 def nearest_station(lat, lon, stations, max_km=STATION_MAX_KM):
@@ -458,7 +461,8 @@ def apply_stations(rows, stations, max_km=STATION_MAX_KM):
         s = nearest_station(r["lat"], r["lon"], stations, max_km)
         if s is not None:
             name = s["name"] if len(s["name"]) <= 28 else s["name"][:27] + "…"
-            out.append(dict(r, aqi=s["aqi"], source=f"📡 {name} · {s['km']} км"))
+            far = "ближайший: " if s["km"] > STATION_MAX_KM else ""
+            out.append(dict(r, aqi=s["aqi"], source=f"📡 {far}{name} · {s['km']} км"))
         else:
             out.append(dict(r, source="🌐 модель"))
     return out
