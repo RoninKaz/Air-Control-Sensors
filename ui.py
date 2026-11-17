@@ -113,6 +113,18 @@ def _ask_location():
     lat, lon = coords.get("latitude"), coords.get("longitude")
     if lat is None or lon is None:
         return None
+    acc = coords.get("accuracy")
+    try:
+        acc = int(float(acc))
+    except (TypeError, ValueError):
+        acc = None
+    if acc is not None and acc > 1500:
+        st.warning(f"Браузер определил место неточно (±{acc / 1000:.1f} км) — на компьютере без GPS так бывает. "
+                   "Район может быть не тот: проверьте во вкладке «Город из списка» → «Район». "
+                   "На телефоне с включённой геолокацией точность обычно выше.")
+    else:
+        st.caption(f"📍 Точность определения: {'±' + str(acc) + ' м' if acc is not None else 'неизвестна'}. "
+                   "Район выбран по ближайшему центру района — если не тот, выберите вручную в «Город из списка».")
     return float(lat), float(lon)
 
 
