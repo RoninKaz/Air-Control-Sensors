@@ -202,8 +202,8 @@ html, body, .stApp, .stMarkdown, .stApp p, .stApp label, .stApp input, .stApp li
   font-family: 'Material Symbols Rounded' !important;
 }}
 .block-container {{ max-width: 1080px; padding-top: 2.2rem; padding-bottom: 4rem; }}
-[data-testid="stToolbar"], [data-testid="stDecoration"] {{ display: none; }}
-header[data-testid="stHeader"] {{ background: transparent; height: 0; }}
+[data-testid="stDecoration"] {{ display: none; }}
+header[data-testid="stHeader"] {{ background: transparent; }}
 h2, h3 {{ font-weight: 700 !important; letter-spacing: -0.015em; }}
 h3 {{ font-size: 1.25rem !important; padding-top: 1.6rem !important; }}
 
