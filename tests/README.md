@@ -2,7 +2,7 @@
 
 ## Ручная проверка сайта
 
-Сайт: https://air-control-sensors.streamlit.app
+Сайт: https://air-control-sensors-t36qs5mspwqzwnkrithhj7.streamlit.app
 
 Тестировщики проверяют его по общему **чек-листу** (31 проверка, у каждого свои строки:
 Баха — выбор места и телефоны, Макс — AQI, погода, советы и графики, Талшын — карты,
