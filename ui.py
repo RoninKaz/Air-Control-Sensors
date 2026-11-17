@@ -78,6 +78,29 @@ GEO_ERRORS = {
 }
 
 
+_HIGH_ACCURACY_JS = """new Promise((resolve) => {
+  if (!navigator.geolocation) { resolve({error: {code: 0}}); return; }
+  let best = null, done = false, id = null, timer = null;
+  const finish = (err) => {
+    if (done) return; done = true;
+    if (id !== null) navigator.geolocation.clearWatch(id);
+    clearTimeout(timer);
+    resolve(best ? {coords: best} : {error: {code: err || 3}});
+  };
+  id = navigator.geolocation.watchPosition(
+    (p) => {
+      const c = p.coords;
+      if (!best || c.accuracy < best.accuracy)
+        best = {latitude: c.latitude, longitude: c.longitude, accuracy: c.accuracy};
+      if (c.accuracy <= 30) finish();
+    },
+    (e) => { if (e.code === 1) finish(1); else if (!best) finish(e.code); },
+    {enableHighAccuracy: true, timeout: 15000, maximumAge: 0}
+  );
+  timer = setTimeout(() => finish(3), 10000);
+})"""
+
+
 def _ask_location():
     """Определяет местоположение сразу, без маленькой кнопки.
     Возвращает (широта, долгота) или None."""
@@ -97,10 +120,15 @@ def _ask_location():
         st.session_state.geo_try += 1
 
     key = f"geo_{st.session_state.geo_try}"
+    # Максимальная точность: просим GPS (enableHighAccuracy) и до 10 секунд ждём лучшую точку.
     try:
-        res = get_geolocation(component_key=key)
-    except TypeError:  # на случай другой версии библиотеки
-        res = get_geolocation()
+        from streamlit_js_eval import streamlit_js_eval
+        res = streamlit_js_eval(js_expressions=_HIGH_ACCURACY_JS, want_output=True, key=key)
+    except Exception:  # noqa: BLE001 — другая версия библиотеки: обычный способ
+        try:
+            res = get_geolocation(component_key=key)
+        except TypeError:
+            res = get_geolocation()
 
     if not isinstance(res, dict):
         st.caption("📍 Определяю местоположение… Если браузер спросит — нажмите «Разрешить».")
@@ -138,7 +166,8 @@ def _ask_location():
                    "Район может быть не тот: проверьте во вкладке «Город из списка» → «Район». "
                    "На телефоне с включённой геолокацией точность обычно выше.")
     else:
-        st.caption(f"📍 Точность определения: {'±' + str(acc) + ' м' if acc is not None else 'неизвестна'}. "
+        st.caption(f"📍 Точность определения: {'±' + str(acc) + ' м' if acc is not None else 'неизвестна'} · "
+                   f"координаты {float(lat):.5f}, {float(lon):.5f}. "
                    "Район выбран по ближайшему центру района — если не тот, выберите вручную в «Город из списка».")
     return float(lat), float(lon)
 
