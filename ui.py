@@ -235,33 +235,6 @@ div[role="radiogroup"] label[data-baseweb="radio"]:has(input:checked) p {{ color
 """
 
 
-THEME_AUTO, THEME_LIGHT, THEME_DARK = "🌗 Как на устройстве", "☀️ Светлая", "🌙 Тёмная"
-
-_THEME_CSS = """
-<style>
-.stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {{ background: {bg} !important; color: {fg} !important; }}
-.stApp p, .stApp span, .stApp label, .stApp li, .stApp h1, .stApp h2, .stApp h3, .stApp summary,
-.stApp [data-testid="stMarkdownContainer"], .stApp [data-testid="stCaptionContainer"] {{ color: {fg}; }}
-[data-baseweb="select"] > div, [data-baseweb="input"] > div, .stTextInput input, .stButton > button,
-[data-testid="stExpander"], [data-testid="stExpander"] details {{ background: {box} !important; color: {fg} !important; border-color: {line} !important; }}
-[data-baseweb="popover"] ul, [data-baseweb="menu"] {{ background: {box} !important; color: {fg} !important; }}
-.stApp svg {{ --acs-bg: {bg}; }}
-</style>
-"""
-
-
-def _theme_picker():
-    """Светлая / тёмная тема. «Как на устройстве» — ничего не меняем."""
-    choice = st.radio("Тема", [THEME_AUTO, THEME_LIGHT, THEME_DARK], horizontal=True,
-                      key="acs_theme", label_visibility="collapsed")
-    if choice == THEME_LIGHT:
-        st.markdown(_THEME_CSS.format(bg="#ffffff", fg="#1b1f24", box="#f1f3f5", line="#d5d9de"),
-                    unsafe_allow_html=True)
-    elif choice == THEME_DARK:
-        st.markdown(_THEME_CSS.format(bg="#0e1117", fg="#fafafa", box="#1c1f26", line="#3a3f4a"),
-                    unsafe_allow_html=True)
-
-
 def _html(text):
     """HTML без отступов и пустых строк: иначе Markdown в Streamlit
     может принять часть блока за код и показать «</div>» текстом."""
@@ -285,7 +258,6 @@ def show_place_picker(cities, districts, regions=None):
     """Выбор места прямо на странице (удобно и на телефоне).
     regions: {область: {район: (lat, lon)}} — режим «Район области»."""
     _style()
-    _theme_picker()
     modes = [MODE_LIST] + ([MODE_REGION] if regions else []) + [MODE_SEARCH, MODE_GEO]
     mode = st.radio("Где смотрим воздух?", modes,
                     horizontal=True, label_visibility="collapsed")
