@@ -92,13 +92,16 @@ WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 GEO_URL = "https://geocoding-api.open-meteo.com/v1/search"
 
 
-def _get(url, params, timeout=10, tries=2):
+def _get(url, params, timeout=10, tries=2, headers=None):
     """GET с повтором: бесплатные сервисы иногда отвечают «подождите» (429)
     или не отвечают вовсе. Пробуем ещё раз после паузы, потом сдаёмся."""
     import time
     for k in range(tries):
         try:
-            r = requests.get(url, params=params, timeout=timeout)
+            if headers:
+                r = requests.get(url, params=params, timeout=timeout, headers=headers)
+            else:
+                r = requests.get(url, params=params, timeout=timeout)
             if r.status_code == 429 or r.status_code >= 500:
                 raise requests.HTTPError(f"HTTP {r.status_code}")
             r.raise_for_status()
@@ -169,8 +172,72 @@ def _distance_km(lat1, lon1, lat2, lon2):
     return 2 * r * math.asin(math.sqrt(a))
 
 
+OSM_URL = "https://nominatim.openstreetmap.org/reverse"
+OSM_HEADERS = {"User-Agent": "AirControlSensors/1.0 (student project; github.com/RoninKaz/Air-Control-Sensors)"}
+_OSM_SKIP = {"state", "region", "country", "country_code", "postcode", "ISO3166-2-lvl3",
+             "ISO3166-2-lvl4", "ISO3166-2-lvl5", "ISO3166-2-lvl6"}
+_osm_cache = {}  # {(lat, lon): (время, результат)} — успехи храним долго, неудачи минуту
+
+
+def _norm(text):
+    """«Туранский район» -> «туранский»: для сравнения названий."""
+    t = str(text).lower().replace("ё", "е").replace("ұ", "у").replace("қ", "к")
+    for word in ("городская администрация", "район", "ауданы", "аудан", "область", "облысы"):
+        t = t.replace(word, "")
+    return "".join(ch for ch in t if ch.isalpha())
+
+
+def osm_district(lat, lon):
+    """Точный район по границам OpenStreetMap: «Шымкент, Туранский район» или
+    «Сайрамский район, Туркестанская область». Нет ответа или не нашли — None."""
+    import time
+    key = (round(lat, 3), round(lon, 3))
+    hit = _osm_cache.get(key)
+    if hit and time.time() - hit[0] < (86400 if hit[1] else 60):
+        return hit[1]
+    result = None
+    try:
+        r = _get(OSM_URL, {"lat": lat, "lon": lon, "format": "jsonv2", "zoom": 14,
+                           "addressdetails": 1, "accept-language": "ru"},
+                 timeout=6, tries=1, headers=OSM_HEADERS)
+        addr = r.json().get("address") or {}
+        result = _match_osm_address(addr)
+    except Exception:  # noqa: BLE001
+        result = None
+    _osm_cache[key] = (time.time(), result)
+    return result
+
+
+def _match_osm_address(addr):
+    """Ищет в адресе OSM район из наших списков (города с районами, потом области)."""
+    values = {k: _norm(v) for k, v in addr.items() if k not in _OSM_SKIP and isinstance(v, str)}
+    names = set(values.values())
+
+    def find(districts):
+        found = [d for d in districts if _norm(d) in names]
+        if not found:  # запасной вариант: совпадают первые 6 букв, и такой район один
+            found = [d for d in districts if any(len(n) >= 6 and n[:6] == _norm(d)[:6] for n in names)]
+        return found[0] if len(found) == 1 else None
+
+    for city, districts in DISTRICTS.items():
+        if _norm(city) in names or _norm(addr.get("state", "")) == _norm(city):
+            d = find(districts)
+            if d:
+                return f"{city}, {d} район"
+    state = _norm(addr.get("state", ""))
+    for region, districts in REGIONS.items():
+        if state and _norm(region) == state:
+            d = find(districts)
+            if d:
+                return f"{d} район, {region}"
+    return None
+
+
 def nearest_place(lat, lon):
     """Место по координатам пользователя: называем ближайший район или город."""
+    exact = osm_district(lat, lon)  # сначала — по настоящим границам районов
+    if exact:
+        return {"name": f"📍 {exact}", "lat": round(lat, 4), "lon": round(lon, 4)}
     best_name, best_km = None, None
     for city, districts in DISTRICTS.items():
         for d, (dlat, dlon) in districts.items():
