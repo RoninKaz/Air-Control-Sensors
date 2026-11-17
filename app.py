@@ -17,7 +17,8 @@ import ui
 from ai.advice_ai import get_ai_advice
 from backend.advice_rules import get_rule_advice
 from backend.data import (CITIES, DISTRICTS, REGION_STATION_MAX_KM, REGIONS,
-                          apply_stations, city_place,
+                          apply_city_sensors, apply_stations, city_place,
+                          get_kz_stations, stations_near,
                           get_region_aqi, region_place,
                           district_place, get_air, get_cities_aqi,
                           get_districts_aqi, get_hourly, get_stations,
@@ -27,29 +28,89 @@ from backend.data import (CITIES, DISTRICTS, REGION_STATION_MAX_KM, REGIONS,
 st.set_page_config(page_title="Air Control Sensors", page_icon=str(Path(__file__).parent / "assets" / "logo.png"), layout="wide")
 
 
-@st.cache_data(ttl=600)  # данные обновляем не чаще раза в 10 минут
-def load_air(place):
+class _NotLive(Exception):
+    """Сервис не ответил — такие (демо) данные надолго не запоминаем."""
+
+
+# Настоящие данные запоминаем на 10 минут. Демо-данные — только на 1 минуту,
+# чтобы после сбоя сервиса сайт быстро вернулся к настоящим цифрам.
+@st.cache_data(ttl=600)
+def _air_live(place):
+    air = get_air(place)
+    if air["source"] != "api":
+        raise _NotLive
+    return air
+
+
+@st.cache_data(ttl=60)
+def _air_any(place):
     return get_air(place)
 
 
+def load_air(place):
+    try:
+        return _air_live(place)
+    except _NotLive:
+        return _air_any(place)
+
+
 @st.cache_data(ttl=600)
-def load_hourly(place):
+def _hourly_live(place):
+    df, source = get_hourly(place)
+    if source != "api":
+        raise _NotLive
+    return df, source
+
+
+@st.cache_data(ttl=60)
+def _hourly_any(place):
     return get_hourly(place)
 
 
+def load_hourly(place):
+    try:
+        return _hourly_live(place)
+    except _NotLive:
+        return _hourly_any(place)
+
+
 @st.cache_data(ttl=600)
+def _points_live(kind, name):
+    rows = {"cities": lambda: get_cities_aqi(), "districts": lambda: get_districts_aqi(name),
+            "region": lambda: get_region_aqi(name)}[kind]()
+    if any(r.get("demo") for r in rows):
+        raise _NotLive
+    return rows
+
+
+@st.cache_data(ttl=60)
+def _points_any(kind, name):
+    return {"cities": lambda: get_cities_aqi(), "districts": lambda: get_districts_aqi(name),
+            "region": lambda: get_region_aqi(name)}[kind]()
+
+
+def _load_points(kind, name=""):
+    try:
+        return _points_live(kind, name)
+    except _NotLive:
+        return _points_any(kind, name)
+
+
 def load_cities_aqi():
-    return get_cities_aqi()
+    return _load_points("cities")
 
 
-@st.cache_data(ttl=600)
 def load_districts_aqi(city):
-    return get_districts_aqi(city)
+    return _load_points("districts", city)
+
+
+def load_region_aqi(region):
+    return _load_points("region", region)
 
 
 @st.cache_data(ttl=600)
-def load_region_aqi(region):
-    return get_region_aqi(region)
+def load_kz_stations(token):
+    return get_kz_stations(token)
 
 
 @st.cache_data(ttl=600)
@@ -115,10 +176,12 @@ df, _ = load_hourly(place)
 station_city = (district_city or region
                 or next((c for c in CITIES if c in place["name"]), None))
 stations = load_stations(station_city, secret("AQICN_TOKEN")) if station_city else []
+kz_stations = load_kz_stations(secret("AQICN_TOKEN"))
 whole_city = sel["mode"] == "list" and not sel["district"]
-if whole_city and stations:  # весь город — среднее по всем живым датчикам
-    air["aqi"] = stations_mean(stations)
-    air["aqi_note"] = f"📡 Среднее по {len(stations)} живым датчикам города (aqicn.org)"
+city_sensors = stations_near(place["lat"], place["lon"], kz_stations) if whole_city else []
+if city_sensors:  # весь город — среднее по живым датчикам до 20 км (так же, как в рейтинге)
+    air["aqi"] = stations_mean(city_sensors)
+    air["aqi_note"] = f"📡 Среднее по {len(city_sensors)} живым датчикам города (aqicn.org)"
 else:
     radius = REGION_STATION_MAX_KM if region else None  # в сёлах датчики редкие
     near = (nearest_station(place["lat"], place["lon"], stations, radius) if radius
@@ -158,4 +221,4 @@ if district_city in DISTRICTS:
 elif region in REGIONS:
     rows = apply_stations(load_region_aqi(region), stations, REGION_STATION_MAX_KM)
     ui.show_districts(region, rows, me, stations)
-ui.show_map(load_cities_aqi(), me)
+ui.show_map(apply_city_sensors(load_cities_aqi(), kz_stations), me)

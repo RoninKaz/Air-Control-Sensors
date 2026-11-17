@@ -34,6 +34,8 @@
                       (одним запросом — для карты и рейтинга)
   region_place(region, district=None) -> place района области (без района — центр области)
   get_region_aqi(region) -> список {city (= район), lat, lon, aqi} для всех районов области
+  get_kz_stations(token) -> все живые датчики Казахстана (карта и рейтинг)
+  apply_city_sensors(rows, stations) -> городам среднее по датчикам до 20 км
   get_districts_aqi(city) -> то же для районов города
 
   get_stations(city, token) -> реальные датчики aqicn вокруг города:
@@ -88,6 +90,23 @@ WAQI_BOUNDS_URL = "https://api.waqi.info/v2/map/bounds"  # реальные да
 AIR_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 GEO_URL = "https://geocoding-api.open-meteo.com/v1/search"
+
+
+def _get(url, params, timeout=10, tries=2):
+    """GET с повтором: бесплатные сервисы иногда отвечают «подождите» (429)
+    или не отвечают вовсе. Пробуем ещё раз после паузы, потом сдаёмся."""
+    import time
+    for k in range(tries):
+        try:
+            r = requests.get(url, params=params, timeout=timeout)
+            if r.status_code == 429 or r.status_code >= 500:
+                raise requests.HTTPError(f"HTTP {r.status_code}")
+            r.raise_for_status()
+            return r
+        except Exception:  # noqa: BLE001
+            if k == tries - 1:
+                raise
+            time.sleep(1.5 * (k + 1))
 
 
 def _utc_now():
@@ -183,10 +202,8 @@ def search_places(text, count=5):
     if len(text) < 2:
         return []
     try:
-        r = requests.get(GEO_URL, params={"name": text, "count": count,
-                                          "language": "ru", "format": "json"},
-                         timeout=10)
-        r.raise_for_status()
+        r = _get(GEO_URL, {"name": text, "count": count,
+                           "language": "ru", "format": "json"}, tries=2)
         results = r.json().get("results") or []
     except Exception:  # noqa: BLE001
         return []
@@ -214,8 +231,7 @@ def _fetch_hourly(lat, lon):
         "forecast_days": 2,
         "timezone": "auto",  # время города, где бы он ни был
     }
-    r = requests.get(AIR_URL, params=params, timeout=10)
-    r.raise_for_status()
+    r = _get(AIR_URL, params)
     data = r.json()
     h = data["hourly"]
     offset = timedelta(seconds=data.get("utc_offset_seconds", 0))
@@ -286,8 +302,7 @@ def _fetch_weather(lat, lon):
         "wind_speed_unit": "ms",
         "timezone": "auto",
     }
-    r = requests.get(WEATHER_URL, params=params, timeout=10)
-    r.raise_for_status()
+    r = _get(WEATHER_URL, params)
     c = r.json()["current"]
     return {
         "t": c.get("temperature_2m"),
@@ -397,17 +412,22 @@ def get_stations(city, token, margin=0.15):
     pts = [p for p in pts if p]
     if not pts:
         return []
-    lat1 = min(p[0] for p in pts) - margin
-    lat2 = max(p[0] for p in pts) + margin
-    lon1 = min(p[1] for p in pts) - margin
-    lon2 = max(p[1] for p in pts) + margin
+    return _stations_in_box(min(p[0] for p in pts) - margin, min(p[1] for p in pts) - margin,
+                            max(p[0] for p in pts) + margin, max(p[1] for p in pts) + margin,
+                            token)
+
+
+def get_kz_stations(token):
+    """Все живые датчики Казахстана одним запросом (для карты и рейтинга городов)."""
+    if not token:
+        return []
+    return _stations_in_box(40.5, 46.4, 55.5, 87.4, token)
+
+
+def _stations_in_box(lat1, lon1, lat2, lon2, token):
     try:
-        r = requests.get(WAQI_BOUNDS_URL, params={
-            "latlng": f"{lat1},{lon1},{lat2},{lon2}",
-            "networks": "all",
-            "token": token,
-        }, timeout=10)
-        r.raise_for_status()
+        r = _get(WAQI_BOUNDS_URL, {"latlng": f"{lat1},{lon1},{lat2},{lon2}",
+                                   "networks": "all", "token": token}, tries=2)
         data = r.json()
         if data.get("status") != "ok":
             return []
@@ -453,6 +473,27 @@ def stations_mean(stations):
     return round(sum(s["aqi"] for s in stations) / len(stations))
 
 
+CITY_STATION_KM = 20.0  # «датчики города» — не дальше 20 км от центра города
+
+
+def stations_near(lat, lon, stations, max_km=CITY_STATION_KM):
+    """Все живые датчики не дальше max_km от точки."""
+    return [s for s in stations if _distance_km(lat, lon, s["lat"], s["lon"]) <= max_km]
+
+
+def apply_city_sensors(rows, stations, max_km=CITY_STATION_KM):
+    """Городам — среднее по их живым датчикам (как на плашке «весь город»).
+    Добавляет "source": «📡 N датч.» или «🌐 модель»."""
+    out = []
+    for r in rows:
+        near = stations_near(r["lat"], r["lon"], stations, max_km)
+        if near:
+            out.append(dict(r, aqi=stations_mean(near), source=f"📡 {len(near)} датч.", demo=False))
+        else:
+            out.append(dict(r, source="🌐 модель"))
+    return out
+
+
 def apply_stations(rows, stations, max_km=STATION_MAX_KM):
     """Каждый район берёт цифру с ближайшего живого датчика.
     Добавляет "source": «📡 датчик: имя · N км» или «🌐 модель» (датчиков нет)."""
@@ -476,16 +517,17 @@ def _points_aqi(points, seed=""):
     lats = ",".join(str(points[n][0]) for n in names)
     lons = ",".join(str(points[n][1]) for n in names)
     try:
-        r = requests.get(AIR_URL, params={"latitude": lats, "longitude": lons,
-                                          "current": "us_aqi"}, timeout=15)
-        r.raise_for_status()
+        r = _get(AIR_URL, {"latitude": lats, "longitude": lons, "current": "us_aqi"},
+                 timeout=15)
         data = r.json()
         if isinstance(data, dict):  # если город один, сервис отдаёт не список
             data = [data]
         values = [item["current"]["us_aqi"] for item in data]
         if len(values) != len(names) or any(v is None for v in values):
             raise ValueError("incomplete response")
-    except Exception:  # noqa: BLE001
+        demo = False
+    except Exception:  # noqa: BLE001 — сервис не ответил: выдуманные цифры с пометкой demo
         values = [round(random.Random(seed + n).uniform(30, 110)) for n in names]
-    return [{"city": n, "lat": points[n][0], "lon": points[n][1], "aqi": int(round(v))}
-            for n, v in zip(names, values)]
+        demo = True
+    return [{"city": n, "lat": points[n][0], "lon": points[n][1], "aqi": int(round(v)),
+             "demo": demo} for n, v in zip(names, values)]

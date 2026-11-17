@@ -254,7 +254,8 @@ def show_header(city, source):
         unsafe_allow_html=True,
     )
     if source == "demo":
-        st.warning("Сейчас показаны демо-данные: источник данных недоступен.")
+        st.warning("Сейчас показаны демо-данные: сервис данных не ответил. "
+                   "Обновите страницу через минуту — появятся настоящие цифры.")
 
 
 SCALE = [0, 50, 100, 150, 200, 300, 500]  # границы шкалы — у каждой полосы равная ширина
@@ -533,7 +534,18 @@ def show_map(rows, me=None):
     st.caption(hint)
     with st.expander("Рейтинг всех городов"):
         table = points.rename(columns={"label": "Город", "aqi": "AQI", "level": "Уровень"})
-        st.dataframe(table[["Город", "AQI", "Уровень"]], hide_index=True)
+        cols = ["Город", "AQI", "Уровень"]
+        sources = {r["city"]: r.get("source") for r in rows}
+        if any(sources.values()):
+            table["Откуда цифра"] = table["Город"].map(sources).fillna("🌐 модель")
+            cols.append("Откуда цифра")
+        st.dataframe(table[cols], hide_index=True)
+    if any(r.get("source", "").startswith("📡") for r in rows):
+        st.caption("📡 — среднее по живым датчикам города (до 20 км, aqicn.org), "
+                   "🌐 — расчёт модели, где датчиков нет.")
+    if any(r.get("demo") for r in rows):
+        st.warning("Часть цифр на карте — демо: сервис данных сейчас не ответил. "
+                   "Обновите страницу через минуту.")
 
 
 def _zoom_for(points):
@@ -570,6 +582,9 @@ def show_districts(city, rows, me=None, stations=None):
                                    "source": "Откуда цифра"})
     st.dataframe(table[["Район", "AQI", "Уровень", "Откуда цифра"]], hide_index=True)
 
+    if any(r.get("demo") and not str(r.get("source", "")).startswith("📡") for r in rows):
+        st.warning("Часть цифр районов — демо: сервис данных сейчас не ответил. "
+                   "Обновите страницу через минуту.")
     from_sensor = points["source"].str.startswith("📡").sum()
     if stations:
         st.caption("Датчики: World Air Quality Index Project (aqicn.org) и исходные службы мониторинга.")
